@@ -140,26 +140,25 @@ Core::Core(std::string ndsRom, std::string gbaRom, std::string ndsSave, std::str
 void Core::resetCycles()
 {
     // Reset the global cycle count periodically to prevent overflow
-    int64_t minCycles = INT64_MAX;
+    int64_t currentGlobalCycles = globalCycles;
 
+    // Subtract the current global cycle count from each event's cycle count
     for (auto& event : events)
     {
-        minCycles = std::min(minCycles, static_cast<int64_t>(event.cycles));
+        event.cycles -= currentGlobalCycles;
     }
 
-    for (auto& event : events)
-    {
-        event.cycles -= minCycles;
-    }
-
-    globalCycles -= minCycles;
-
+    // Reset the cycle counts for the interpreters and timers
     for (int i = 0; i < 2; ++i)
     {
         interpreter[i].resetCycles();
         timers[i].resetCycles();
     }
 
+    // Reset the global cycle count
+    globalCycles = 0;
+
+    // Schedule the next cycle reset
     schedule(RESET_CYCLES, 0x7FFFFFFF);
 }
 
@@ -167,7 +166,10 @@ void Core::schedule(SchedTask task, uint32_t cycles)
 {
     // Add a task to the scheduler, sorted by least to most cycles until execution
     SchedEvent event(&tasks[task], globalCycles + cycles);
-    auto it = std::upper_bound(events.cbegin(), events.cend(), event);
+    auto it = std::upper_bound(events.cbegin(), events.cend(), event,
+                               [](const SchedEvent& a, const SchedEvent& b) {
+                                   return a.cycles < b.cycles;
+                               });
     events.insert(it, event);
 }
 
