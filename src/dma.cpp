@@ -20,55 +20,113 @@
 #include "dma.h"
 #include "core.h"
 
-void Dma::transfer(int channel) {
-    uint32_t dmaControl = dmaCnt[channel];
-    int dstAddrCnt = (dmaControl & 0x00600000) >> 21;
-    int srcAddrCnt = (dmaControl & 0x01800000) >> 23;
-    int mode = (dmaControl & 0x38000000) >> 27;
-    int wordCount = dmaControl & 0x001FFFFF;
+void Dma::transfer(int channel)
+{
+    int dstAddrCnt = (dmaCnt[channel] & 0x00600000) >> 21;
+    int srcAddrCnt = (dmaCnt[channel] & 0x01800000) >> 23;
+    int mode       = (dmaCnt[channel] & 0x38000000) >> 27;
+    int gxFifoCount = 0;
 
-    if (core->gbaMode && mode == 6 && (channel == 1 || channel == 2)) { // GBA sound DMA
-        for (int i = 0; i < 4; i++) {
+    // Perform the transfer
+    if (core->gbaMode && mode == 6 && (channel == 1 || channel == 2)) // GBA sound DMA
+    {
+        for (unsigned int i = 0; i < 4; i++)
+        {
+            // Transfer a word
+            // GBA sound DMAs always transfer 4 words and never adjust the destination address
             uint32_t value = core->memory.read<uint32_t>(cpu, srcAddrs[channel], false);
             core->memory.write<uint32_t>(cpu, dstAddrs[channel], value, false);
-            srcAddrs[channel] += (srcAddrCnt == 0) ? 4 : -4;
-        }
-    } else {
-        bool isWordTransfer = dmaControl & BIT(26);
-        int addrIncSrc = (srcAddrCnt == 0) ? (isWordTransfer ? 4 : 2) : (isWordTransfer ? -4 : -2);
-        int addrIncDst = (dstAddrCnt == 0 || dstAddrCnt == 3) ? (isWordTransfer ? 4 : 2) : (isWordTransfer ? -4 : -2);
 
-        while (wordCount--) {
-            if (isWordTransfer) {
-                uint32_t value = core->memory.read<uint32_t>(cpu, srcAddrs[channel], false);
-                core->memory.write<uint32_t>(cpu, dstAddrs[channel], value, false);
-            } else {
-                uint16_t value = core->memory.read<uint16_t>(cpu, srcAddrs[channel], false);
-                core->memory.write<uint16_t>(cpu, dstAddrs[channel], value, false);
-            }
-            srcAddrs[channel] += addrIncSrc;
-            dstAddrs[channel] += addrIncDst;
+            // Adjust the source address
+            if (srcAddrCnt == 0) // Increment
+                srcAddrs[channel] += 4;
+            else if (srcAddrCnt == 1) // Decrement
+                srcAddrs[channel] -= 4;
+        }
+    }
+    else if (dmaCnt[channel] & BIT(26)) // Whole word transfer
+    {
+        for (unsigned int i = 0; i < wordCounts[channel]; i++)
+        {
+            // Transfer a word
+            uint32_t value = core->memory.read<uint32_t>(cpu, srcAddrs[channel], false);
+            core->memory.write<uint32_t>(cpu, dstAddrs[channel], value, false);
+
+            // Adjust the source address
+            if (srcAddrCnt == 0) // Increment
+                srcAddrs[channel] += 4;
+            else if (srcAddrCnt == 1) // Decrement
+                srcAddrs[channel] -= 4;
+
+            // Adjust the destination address
+            if (dstAddrCnt == 0 || dstAddrCnt == 3) // Increment
+                dstAddrs[channel] += 4;
+            else if (dstAddrCnt == 1) // Decrement
+                dstAddrs[channel] -= 4;
+
+            // In GXFIFO mode, only send 112 words at a time
+            if (mode == 7 && ++gxFifoCount == 112)
+                break;
+        }
+    }
+    else // Half-word transfer
+    {
+        for (unsigned int i = 0; i < wordCounts[channel]; i++)
+        {
+            // Transfer a half-word
+            uint16_t value = core->memory.read<uint16_t>(cpu, srcAddrs[channel], false);
+            core->memory.write<uint16_t>(cpu, dstAddrs[channel], value, false);
+
+            // Adjust the source address
+            if (srcAddrCnt == 0) // Increment
+                srcAddrs[channel] += 2;
+            else if (srcAddrCnt == 1) // Decrement
+                srcAddrs[channel] -= 2;
+
+            // Adjust the destination address
+            if (dstAddrCnt == 0 || dstAddrCnt == 3) // Increment
+                dstAddrs[channel] += 2;
+            else if (dstAddrCnt == 1) // Decrement
+                dstAddrs[channel] -= 2;
+
+            // In GXFIFO mode, only send 112 words at a time
+            if (mode == 7 && ++gxFifoCount == 112)
+                break;
         }
     }
 
-    if (mode == 7) {
-        wordCounts[channel] -= (dmaControl & 0x001FFFFF) - wordCount;
-        if (wordCounts[channel] > 0 && (core->gpu3D.readGxStat() & BIT(25)))
-            core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + channel), 1);
-        return;
+    if (mode == 7)
+    {
+        // Don't end a GXFIFO transfer if there are still words left
+        wordCounts[channel] -= gxFifoCount;
+        if (wordCounts[channel] > 0)
+        {
+            // Schedule another transfer immediately if the FIFO is still half empty
+            if (core->gpu3D.readGxStat() & BIT(25))
+                core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + channel), 1);
+            return;
+        }
     }
 
-    if ((dmaControl & BIT(25)) && mode != 0) { // Repeat
-        wordCounts[channel] = dmaControl & 0x001FFFFF;
-        if (dstAddrCnt == 3)
+    if ((dmaCnt[channel] & BIT(25)) && mode != 0) // Repeat
+    {
+        // Reload the internal registers on repeat
+        wordCounts[channel] = dmaCnt[channel] & 0x001FFFFF;
+        if (dstAddrCnt == 3) // Increment and reload
             dstAddrs[channel] = dmaDad[channel];
-        if (mode == 7 && (core->gpu3D.readGxStat() & BIT(25)))
+
+        // In GXFIFO mode, schedule another transfer immediately if the FIFO is still half empty
+        if (mode == 7 && core->gpu3D.readGxStat() & BIT(25))
             core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + channel), 1);
-    } else {
+    }
+    else
+    {
+        // End the transfer
         dmaCnt[channel] &= ~BIT(31);
     }
 
-    if (dmaControl & BIT(30))
+    // Trigger an end of transfer IRQ if enabled
+    if (dmaCnt[channel] & BIT(30))
         core->interpreter[cpu].sendInterrupt(8 + channel);
 }
 
