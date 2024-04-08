@@ -140,11 +140,26 @@ Core::Core(std::string ndsRom, std::string gbaRom, std::string ndsSave, std::str
 void Core::resetCycles()
 {
     // Reset the global cycle count periodically to prevent overflow
-    for (size_t i = 0; i < events.size(); i++)
-        events[i].cycles -= globalCycles;
-    for (int i = 0; i < 2; i++)
-        interpreter[i].resetCycles(), timers[i].resetCycles();
-    globalCycles -= globalCycles;
+    int64_t minCycles = INT64_MAX;
+
+    for (auto& event : events)
+    {
+        minCycles = std::min(minCycles, static_cast<int64_t>(event.cycles));
+    }
+
+    for (auto& event : events)
+    {
+        event.cycles -= minCycles;
+    }
+
+    globalCycles -= minCycles;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        interpreter[i].resetCycles();
+        timers[i].resetCycles();
+    }
+
     schedule(RESET_CYCLES, 0x7FFFFFFF);
 }
 
