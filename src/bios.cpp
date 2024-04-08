@@ -67,26 +67,25 @@ int (Bios::*Bios::swiTableGba[])(uint32_t**) =
 int Bios::execute(uint8_t vector, uint32_t **registers)
 {
     // Execute the HLE version of the given exception vector
-    switch (vector)
+    if (vector == 0x08) // SWI
     {
-        case 0x08: // SWI
-        {
-            // The PC was adjusted for an exception, so adjust it back
-            *registers[15] += 4;
+        // The PC was adjusted for an exception, so adjust it back
+        *registers[15] += 4;
 
-            // Use the comment from the SWI opcode to lookup what function to execute
-            uint32_t address = *registers[15] - (core->interpreter[arm7].isThumb() ? 4 : 6);
-            uint8_t comment = core->memory.read<uint8_t>(arm7, address);
-            return (this->*swiTable[std::min<uint8_t>(comment, 0x20)])(registers);
-        }
-
-        case 0x18: // IRQ
-            // Let the interpreter handle HLE interrupts
-            return core->interpreter[arm7].handleHleIrq();
-
-        default:
-            LOG("Unimplemented ARM%d BIOS vector: 0x%02X\n", (arm7 ? 7 : 9), vector);
-            return 3;
+        // Use the comment from the SWI opcode to lookup what function to execute
+        uint32_t address = *registers[15] - 4;
+        uint8_t comment = core->memory.read<uint8_t>(arm7, address);
+        return (this->*swiTable[comment & 0x1F])(registers);
+    }
+    else if (vector == 0x18) // IRQ
+    {
+        // Let the interpreter handle HLE interrupts
+        return core->interpreter[arm7].handleHleIrq();
+    }
+    else
+    {
+        LOG("Unimplemented ARM%d BIOS vector: 0x%02X\n", (arm7 ? 7 : 9), vector);
+        return 3;
     }
 }
 
@@ -156,21 +155,40 @@ int Bios::swiInterruptWait(uint32_t **registers)
 {
     // Set the flags to wait for and start waiting
     waitFlags = *registers[1];
-    core->interpreter[arm7].halt(0);
 
     if (*registers[0]) // Discard old
     {
-        // Clear old flags and continue waiting for a new one
-        checkWaitFlags();
-        waitFlags = *registers[1];
+        // Read the BIOS interrupt flags from memory
+        uint32_t address = arm7 ? 0x3FFFFF8 : (core->cp15.getDtcmAddr() + 0x3FF8);
+        uint32_t flags = core->memory.read<uint32_t>(arm7, address);
+
+        // If any of the wait flags are set, clear them and continue waiting
+        if (flags & waitFlags)
+        {
+            uint32_t newFlags = flags & ~waitFlags;
+            core->memory.write<uint32_t>(arm7, address, newFlags);
+            waitFlags = *registers[1];
+        }
+        else
+        {
+            waitFlags = *registers[1];
+        }
+
         core->interpreter[arm7].halt(0);
     }
     else if (arm7)
     {
-        // Check old flags and don't wait if one is already set
-        // This is bugged on ARM9; it always waits for at least one interrupt
-        checkWaitFlags();
+        // Read the BIOS interrupt flags from memory
+        uint32_t address = 0x3FFFFF8;
+        uint32_t flags = core->memory.read<uint32_t>(arm7, address);
+
+        // If any of the wait flags are set, return immediately
+        if (flags & waitFlags)
+            return 3;
+
+        core->interpreter[arm7].halt(0);
     }
+
     return 3;
 }
 
@@ -234,15 +252,12 @@ int Bios::swiSquareRoot(uint32_t **registers)
 int Bios::swiArcTan(uint32_t **registers)
 {
     // Calculate the inverse of a fixed-point tangent
-    int32_t square = -(int32_t(*registers[0] * *registers[0]) >> 14);
-    int32_t result = ((square * 0xA9) >> 14) + 0x390;
-    result = ((result * square) >> 14) + 0x91C;
-    result = ((result * square) >> 14) + 0xFB6;
-    result = ((result * square) >> 14) + 0x16AA;
-    result = ((result * square) >> 14) + 0x2081;
-    result = ((result * square) >> 14) + 0x3651;
-    result = ((result * square) >> 14) + 0xA2F9;
-    *registers[0] = int32_t(*registers[0] * result) >> 16;
+    int32_t x = static_cast<int32_t>(*registers[0]);
+    int32_t x2 = (x * x) >> 14;
+    int32_t result = ((((((((0xA9 * x2) >> 14) + 0x390) * x2) >> 14) + 0x91C) * x2) >> 14) + 0xFB6;
+    result = ((((((result * x2) >> 14) + 0x16AA) * x2) >> 14) + 0x2081) * x;
+    result >>= 16;
+    *registers[0] = result;
     return 3;
 }
 
@@ -250,8 +265,8 @@ int Bios::swiArcTan2(uint32_t **registers)
 {
     // Define parameters for calculating inverse tangent with correction processing
     static const uint8_t offsets[] = { 0, 1, 1, 2, 2, 3, 3, 4 };
-    int32_t x = *registers[0];
-    int32_t y = *registers[1];
+    int32_t x = static_cast<int32_t>(*registers[0]);
+    int32_t y = static_cast<int32_t>(*registers[1]);
     uint8_t octant = 0;
 
     // Determine which octant the angle resides in
@@ -267,7 +282,7 @@ int Bios::swiArcTan2(uint32_t **registers)
     // Calculate the tangent's inverse and adjust based on octant
     swiArcTan(registers);
     if (!swap) *registers[0] = -*registers[0];
-    *registers[0] += offsets[octant] << 14;
+    *registers[0] += offsets[octant];
     return 3;
 }
 
@@ -308,11 +323,11 @@ int Bios::swiCpuFastSet(uint32_t **registers)
     uint32_t size = (*registers[2] & 0xFFFFF) << 2;
 
     // Copy/fill memory from the source to the destination
-    for (uint32_t i = 0; i < size; i += 4)
+    for (uint32_t i = 0; i < size; ++i)
     {
-        uint32_t address = *registers[0] + (fixed ? 0 : i);
+        uint32_t address = *registers[0] + (fixed ? 0 : i * 4);
         uint32_t value = core->memory.read<uint32_t>(arm7, address);
-        core->memory.write<uint32_t>(arm7, *registers[1] + i, value);
+        core->memory.write<uint32_t>(arm7, *registers[1] + i * 4, value);
     }
     return 3;
 }
