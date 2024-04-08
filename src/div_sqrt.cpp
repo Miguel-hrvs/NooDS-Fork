@@ -24,88 +24,38 @@
 
 void DivSqrt::divide()
 {
-    // Set the division by zero error bit
-    // The bit only gets set if the full 64-bit denominator is zero, even in 32-bit mode
-    if (divDenom == 0) divCnt |= BIT(14); else divCnt &= ~BIT(14);
+    divCnt &= ~BIT(14);
+    if (divDenom == 0) divCnt |= BIT(14);
 
-    // Calculate the division result and remainder
-    switch (divCnt & 0x0003) // Division mode
+    int divMode = divCnt & 0x0003;
+    int64_t num = static_cast<int64_t>(divNumer);
+    int32_t den = static_cast<int32_t>(divDenom);
+
+    if (divMode == 0) // 32-bit / 32-bit
     {
-        case 0: // 32-bit / 32-bit
-        {
-            if ((int32_t)divNumer == INT32_MIN && (int32_t)divDenom == -1) // Overflow
-            {
-                divResult    = (int32_t)divNumer ^ (0xFFFFFFFFULL << 32);
-                divRemResult = 0;
-            }
-            else if ((int32_t)divDenom != 0)
-            {
-                divResult    = (int32_t)divNumer / (int32_t)divDenom;
-                divRemResult = (int32_t)divNumer % (int32_t)divDenom;
-            }
-            else // Division by 0
-            {
-                divResult    = (((int32_t)divNumer < 0) ? 1 : -1) ^ (0xFFFFFFFFULL << 32);
-                divRemResult = (int32_t)divNumer;
-            }
-            break;
-        }
-
-        case 1: case 3: // 64-bit / 32-bit
-        {
-            if (divNumer == INT64_MIN && (int32_t)divDenom == -1) // Overflow
-            {
-                divResult    = divNumer;
-                divRemResult = 0;
-            }
-            else if ((int32_t)divDenom != 0)
-            {
-                divResult    = divNumer / (int32_t)divDenom;
-                divRemResult = divNumer % (int32_t)divDenom;
-            }
-            else // Division by 0
-            {
-                divResult    = (divNumer < 0) ? 1 : -1;
-                divRemResult = divNumer;
-            }
-            break;
-        }
-
-        case 2: // 64-bit / 64-bit
-        {
-            if (divNumer == INT64_MIN && divDenom == -1) // Overflow
-            {
-                divResult    = divNumer;
-                divRemResult = 0;
-            }
-            else if (divDenom != 0)
-            {
-                divResult    = divNumer / divDenom;
-                divRemResult = divNumer % divDenom;
-            }
-            else // Division by 0
-            {
-                divResult    = (divNumer < 0) ? 1 : -1;
-                divRemResult = divNumer;
-            }
-            break;
-        }
+        int32_t n = static_cast<int32_t>(num);
+        if (n == INT32_MIN && den == -1) // Overflow
+            divResult = (n ^ (0xFFFFFFFFULL << 32)), divRemResult = 0;
+        else if (den != 0)
+            divResult = n / den, divRemResult = n % den;
+        else
+            divResult = ((n < 0) ? 1 : -1) ^ (0xFFFFFFFFULL << 32), divRemResult = n;
+    }
+    else // 64-bit / 32-bit or 64-bit / 64-bit
+    {
+        if ((divMode == 1 || divMode == 3) && num == INT64_MIN && den == -1) // Overflow
+            divResult = num, divRemResult = 0;
+        else if (den != 0)
+            divResult = num / den, divRemResult = num % den;
+        else
+            divResult = (num < 0) ? 1 : -1, divRemResult = num;
     }
 }
 
 void DivSqrt::squareRoot()
 {
     // Calculate the square root result
-    switch (sqrtCnt & 0x0001) // Square root mode
-    {
-        case 0: // 32-bit
-            sqrtResult = sqrt((uint32_t)sqrtParam);
-            break;
-
-        case 1: // 64-bit
-            sqrtResult = sqrtl(sqrtParam);
-            break;
-    }
+    sqrtResult = (sqrtCnt & 0x0001) ? sqrtl(sqrtParam) : sqrt((uint32_t)sqrtParam);
 }
 
 void DivSqrt::writeDivCnt(uint16_t mask, uint16_t value)
