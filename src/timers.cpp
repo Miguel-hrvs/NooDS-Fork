@@ -56,13 +56,6 @@ void Timers::overflow(int timer)
         overflow(timer + 1);
 }
 
-void Timers::writeTmCntL(int timer, uint16_t mask, uint16_t value)
-{
-    // Write to one of the TMCNT_L registers
-    // This value doesn't affect the current counter, and is instead used as the reload value
-    tmCntL[timer] = (tmCntL[timer] & ~mask) | (value & mask);
-}
-
 void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
 {
     bool dirty = false;
@@ -83,13 +76,6 @@ void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
         }
     }
 
-    // Reload the counter if the enable bit changes from 0 to 1
-    if (!(tmCntH[timer] & BIT(7)) && (value & BIT(7)))
-    {
-        timers[timer] = tmCntL[timer];
-        dirty = true;
-    }
-
     // Write to one of the TMCNT_H registers
     mask &= 0x00C7;
     tmCntH[timer] = (tmCntH[timer] & ~mask) | (value & mask);
@@ -104,8 +90,5 @@ void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
 
 uint16_t Timers::readTmCntL(int timer)
 {
-    // Read the current timer value, updating it if it's running on the scheduler
-    if ((tmCntH[timer] & BIT(7)) && (timer == 0 || !(tmCntH[timer] & BIT(2))))
-        timers[timer] = 0x10000 - ((endCycles[timer] - core->globalCycles) >> shifts[timer]);
-    return timers[timer];
+    return timers[0];
 }
