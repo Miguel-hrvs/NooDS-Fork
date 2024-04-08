@@ -155,10 +155,6 @@ FORCE_INLINE int Interpreter::ldrshOf(uint32_t opcode, uint32_t op2) // LDRSH Rd
     uint32_t op1 = *registers[(opcode >> 16) & 0xF];
     *op0 = (int16_t)core->memory.read<uint16_t>(arm7, op1 += op2);
 
-    // Shift misaligned reads on ARM7
-    if (op1 & arm7)
-        *op0 = (int16_t)*op0 >> 8;
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -196,10 +192,6 @@ FORCE_INLINE int Interpreter::ldrhOf(uint32_t opcode, uint32_t op2) // LDRH Rd,[
     uint32_t op1 = *registers[(opcode >> 16) & 0xF];
     *op0 = core->memory.read<uint16_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads on ARM7
-    if (op1 & arm7)
-        *op0 = (*op0 << 24) | (*op0 >> 8);
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -222,13 +214,6 @@ FORCE_INLINE int Interpreter::ldrOf(uint32_t opcode, uint32_t op2) // LDR Rd,[Rn
     uint32_t *op0 = registers[(opcode >> 12) & 0xF];
     uint32_t op1 = *registers[(opcode >> 16) & 0xF];
     *op0 = core->memory.read<uint32_t>(arm7, op1 += op2);
-
-    // Rotate misaligned reads
-    if (op1 & 0x3)
-    {
-        uint8_t shift = (op1 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
 
     // Handle pipelining and THUMB switching
     if (op0 != registers[15]) return (arm7 << 1) + 1;
@@ -290,10 +275,6 @@ FORCE_INLINE int Interpreter::ldrshPr(uint32_t opcode, uint32_t op2) // LDRSH Rd
     uint32_t address = *op1 += op2;
     *op0 = (int16_t)core->memory.read<uint16_t>(arm7, address);
 
-    // Shift misaligned reads on ARM7
-    if (address & arm7)
-        *op0 = (int16_t)*op0 >> 8;
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -332,10 +313,6 @@ FORCE_INLINE int Interpreter::ldrhPr(uint32_t opcode, uint32_t op2) // LDRH Rd,[
     uint32_t address = *op1 += op2;
     *op0 = core->memory.read<uint16_t>(arm7, address);
 
-    // Rotate misaligned reads on ARM7
-    if (address & arm7)
-        *op0 = (*op0 << 24) | (*op0 >> 8);
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -359,13 +336,6 @@ FORCE_INLINE int Interpreter::ldrPr(uint32_t opcode, uint32_t op2) // LDR Rd,[Rn
     uint32_t *op1 = registers[(opcode >> 16) & 0xF];
     uint32_t address = *op1 += op2;
     *op0 = core->memory.read<uint32_t>(arm7, address);
-
-    // Rotate misaligned reads
-    if (address & 0x3)
-    {
-        uint8_t shift = (address & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
 
     // Handle pipelining and THUMB switching
     if (op0 != registers[15]) return (arm7 << 1) + 1;
@@ -428,10 +398,6 @@ FORCE_INLINE int Interpreter::ldrshPt(uint32_t opcode, uint32_t op2) // LDRSH Rd
     uint32_t address = (*op1 += op2) - op2;
     *op0 = (int16_t)core->memory.read<uint16_t>(arm7, address);
 
-    // Shift misaligned reads on ARM7
-    if (address & arm7)
-        *op0 = (int16_t)*op0 >> 8;
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -472,10 +438,6 @@ FORCE_INLINE int Interpreter::ldrhPt(uint32_t opcode, uint32_t op2) // LDRH Rd,[
     uint32_t address = (*op1 += op2) - op2;
     *op0 = core->memory.read<uint16_t>(arm7, address);
 
-    // Rotate misaligned reads on ARM7
-    if (address & arm7)
-        *op0 = (*op0 << 24) | (*op0 >> 8);
-
     // Handle pipelining
     if (op0 != registers[15]) return (arm7 << 1) + 1;
     flushPipeline();
@@ -500,13 +462,6 @@ FORCE_INLINE int Interpreter::ldrPt(uint32_t opcode, uint32_t op2) // LDR Rd,[Rn
     uint32_t *op1 = registers[(opcode >> 16) & 0xF];
     uint32_t address = (*op1 += op2) - op2;
     *op0 = core->memory.read<uint32_t>(arm7, address);
-
-    // Rotate misaligned reads
-    if (address & 0x3)
-    {
-        uint8_t shift = (address & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
 
     // Handle pipelining and THUMB switching
     if (op0 != registers[15]) return (arm7 << 1) + 1;
@@ -569,13 +524,7 @@ int Interpreter::swp(uint32_t opcode) // SWP Rd,Rm,[Rn]
     uint32_t op2 = *registers[(opcode >> 16) & 0xF];
     *op0 = core->memory.read<uint32_t>(arm7, op2);
     core->memory.write<uint32_t>(arm7, op2, op1);
-
-    // Rotate misaligned reads
-    if (op2 & 0x3)
-    {
-        uint8_t shift = (op2 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
+    
     return (arm7 << 1) + 2;
 }
 
@@ -1325,9 +1274,6 @@ int Interpreter::ldrshRegT(uint16_t opcode) // LDRSH Rd,[Rb,Ro]
     uint32_t op2 = *registers[(opcode >> 6) & 0x7];
     *op0 = (int16_t)core->memory.read<uint16_t>(arm7, op1 += op2);
 
-    // Shift misaligned reads on ARM7
-    if (op1 & arm7)
-        *op0 = (int16_t)*op0 >> 8;
     return (arm7 << 1) + 1;
 }
 
@@ -1359,9 +1305,6 @@ int Interpreter::ldrhRegT(uint16_t opcode) // LDRH Rd,[Rb,Ro]
     uint32_t op2 = *registers[(opcode >> 6) & 0x7];
     *op0 = core->memory.read<uint16_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads on ARM7
-    if (op1 & arm7)
-        *op0 = (*op0 << 24) | (*op0 >> 8);
     return (arm7 << 1) + 1;
 }
 
@@ -1383,12 +1326,6 @@ int Interpreter::ldrRegT(uint16_t opcode) // LDR Rd,[Rb,Ro]
     uint32_t op2 = *registers[(opcode >> 6) & 0x7];
     *op0 = core->memory.read<uint32_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads
-    if (op1 & 0x3)
-    {
-        uint8_t shift = (op1 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
     return (arm7 << 1) + 1;
 }
 
@@ -1430,9 +1367,6 @@ int Interpreter::ldrhImm5T(uint16_t opcode) // LDRH Rd,[Rb,#i]
     uint32_t op2 = (opcode >> 5) & 0x3E;
     *op0 = core->memory.read<uint16_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads on ARM7
-    if (op1 & arm7)
-        *op0 = (*op0 << 24) | (*op0 >> 8);
     return (arm7 << 1) + 1;
 }
 
@@ -1454,12 +1388,6 @@ int Interpreter::ldrImm5T(uint16_t opcode) // LDR Rd,[Rb,#i]
     uint32_t op2 = (opcode >> 4) & 0x7C;
     *op0 = core->memory.read<uint32_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads
-    if (op1 & 0x3)
-    {
-        uint8_t shift = (op1 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
     return (arm7 << 1) + 1;
 }
 
@@ -1481,12 +1409,6 @@ int Interpreter::ldrPcT(uint16_t opcode) // LDR Rd,[PC,#i]
     uint32_t op2 = (opcode & 0xFF) << 2;
     *op0 = core->memory.read<uint32_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads
-    if (op1 & 0x3)
-    {
-        uint8_t shift = (op1 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
     return (arm7 << 1) + 1;
 }
 
@@ -1498,12 +1420,6 @@ int Interpreter::ldrSpT(uint16_t opcode) // LDR Rd,[SP,#i]
     uint32_t op2 = (opcode & 0xFF) << 2;
     *op0 = core->memory.read<uint32_t>(arm7, op1 += op2);
 
-    // Rotate misaligned reads
-    if (op1 & 0x3)
-    {
-        uint8_t shift = (op1 & 0x3) << 3;
-        *op0 = (*op0 << (32 - shift)) | (*op0 >> shift);
-    }
     return (arm7 << 1) + 1;
 }
 
