@@ -285,28 +285,31 @@ void CartridgeNds::directBoot()
     }
 
     // Load the initial ARM9 code into memory
-    for (uint32_t i = 0; i < size9; i += 4)
-    {
-        if (romEncrypted && offset9 + i >= 0x4000 && offset9 + i < 0x4800)
-        {
-            if (offset9 + i < 0x4008)
-            {
-                // Overwrite the 'encryObj' string
-                core->memory.write<uint32_t>(0, ramAddr9 + i, 0xE7FFDEFF);
-            }
-            else
-            {
-                // Decrypt the first 2KB of the secure area
-                initKeycode(3);
-                uint64_t data = decrypt64(U8TO64(rom, (offset + i) & ~7));
-                core->memory.write<uint32_t>(0, ramAddr9 + i, data >> (((offset + i) & 4) ? 32 : 0));
-            }
-        }
-        else
-        {
-            core->memory.write<uint32_t>(0, ramAddr9 + i, U8TO32(rom, offset + i));
-        }
-    }
+	for (uint32_t i = 0; i < size9; i += 4)
+	{
+		uint32_t romAddr = offset9 + i;
+		uint32_t ramAddr = ramAddr9 + i;
+
+		if (romEncrypted && romAddr >= 0x4000 && romAddr < 0x4800)
+		{
+			if (romAddr < 0x4008)
+			{
+				// Overwrite the 'encryObj' string
+				core->memory.write<uint32_t>(0, ramAddr, 0xE7FFDEFF);
+			}
+			else
+			{
+				// Decrypt the first 2KB of the secure area
+				initKeycode(3);
+				uint64_t data = decrypt64(U8TO64(rom, romAddr & ~7));
+				core->memory.write<uint32_t>(0, ramAddr, data >> ((romAddr & 4) ? 32 : 0));
+			}
+		}
+		else
+		{
+			core->memory.write<uint32_t>(0, ramAddr, U8TO32(rom, romAddr));
+		}
+	}
 
     // Load the initial ARM7 code from file if needed
     if (romFile)
@@ -319,29 +322,34 @@ void CartridgeNds::directBoot()
         offset = offset7;
     }
 
-    // Load the initial ARM7 code into memory
-    for (uint32_t i = 0; i < size7; i += 4)
-    {
-        if (romEncrypted && offset7 + i >= 0x4000 && offset7 + i < 0x4800)
-        {
-            if (offset7 + i < 0x4008)
-            {
-                // Overwrite the 'encryObj' string
-                core->memory.write<uint32_t>(1, ramAddr7 + i, 0xE7FFDEFF);
-            }
-            else
-            {
-                // Decrypt the first 2KB of the secure area
-                initKeycode(3);
-                uint64_t data = decrypt64(U8TO64(rom, (offset + i) & ~7));
-                core->memory.write<uint32_t>(1, ramAddr7 + i, data >> (((offset + i) & 4) ? 32 : 0));
-            }
-        }
-        else
-        {
-            core->memory.write<uint32_t>(1, ramAddr7 + i, U8TO32(rom, offset + i));
-        }
-    }
+	// Load the initial ARM7 code into memory
+	for (uint32_t i = 0; i < size7; i += 4)
+	{
+		uint32_t romOffset = offset7 + i;
+		uint32_t data;
+
+		if (romEncrypted && romOffset >= 0x4000 && romOffset < 0x4800)
+		{
+			if (romOffset < 0x4008)
+			{
+				// Overwrite the 'encryObj' string
+				data = 0xE7FFDEFF;
+			}
+			else
+			{
+				// Decrypt the first 2KB of the secure area
+				initKeycode(3);
+				uint64_t decryptedData = decrypt64(U8TO64(rom, romOffset & ~7));
+				data = (uint32_t)(decryptedData >> ((romOffset & 4) ? 32 : 0));
+			}
+		}
+		else
+		{
+			data = U8TO32(rom, romOffset);
+		}
+
+		core->memory.write<uint32_t>(1, ramAddr7 + i, data);
+	}
 }
 
 uint64_t CartridgeNds::encrypt64(uint64_t value)
