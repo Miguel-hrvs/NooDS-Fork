@@ -56,20 +56,11 @@ void Timers::overflow(int timer)
     // Trigger a GBA sound FIFO event
     if (core->gbaMode && timer < 2)
         core->spu.gbaFifoTimer(timer);
-
-    // If the next timer has count-up timing enabled, tick it now
-    // In count-up timing mode, the timer only ticks when the previous timer overflows
-    if (timer < 3 && (tmCntH[timer + 1] & BIT(2)) && ++timers[timer + 1] == 0)
-        overflow(timer + 1);
 }
 
 void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
 {
     bool dirty = false;
-
-    // Update the current timer value if it's running on the scheduler
-    if ((tmCntH[timer] & BIT(7)) && (timer == 0 || !(value & BIT(2))))
-        timers[timer] = 0x10000 - ((endCycles[timer] - core->globalCycles) >> shifts[timer]);
 
     // Update the timer shift if the prescaler setting was changed
     // The prescaler allows timers to tick at frequencies of f/1, f/64, f/256, or f/1024 (when not in count-up mode)
@@ -84,11 +75,7 @@ void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
     }
 	
 	// Reload the counter if the enable bit changes from 0 to 1
-    if (!(tmCntH[timer] & BIT(7)) && (value & BIT(7)))
-    {
-        timers[timer] = tmCntL[timer];
-        dirty = true;
-    }
+    timers[timer] = tmCntL[timer];
 	
     // Write to one of the TMCNT_H registers
     mask &= 0x00C7;
@@ -105,7 +92,6 @@ void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
 uint16_t Timers::readTmCntL(int timer)
 {
     // Read the current timer value, updating it if it's running on the scheduler
-    if ((tmCntH[timer] & BIT(7)) && (timer == 0 || !(tmCntH[timer] & BIT(2))))
-        timers[timer] = 0x10000 - ((endCycles[timer] - core->globalCycles) >> shifts[timer]);
-    return timers[timer];
+    timer = 0x10000 - ((endCycles[timer] - core->globalCycles) >> shifts[timer]);
+    return timer;
 }
