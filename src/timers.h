@@ -35,10 +35,7 @@ class Timers
         uint16_t readTmCntH(int timer) { return tmCntH[timer]; }
         uint16_t readTmCntL(int timer);
 
-        void writeTmCntL(int timer, uint16_t mask, uint16_t value) {
-        tmCntL[timer] = (tmCntL[timer] & ~mask) | (value & mask);
-		}
-		
+        void writeTmCntL(int timer, uint16_t mask, uint16_t value);
         void writeTmCntH(int timer, uint16_t mask, uint16_t value);
 
     private:
