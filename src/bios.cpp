@@ -67,25 +67,26 @@ int (Bios::*Bios::swiTableGba[])(uint32_t**) =
 int Bios::execute(uint8_t vector, uint32_t **registers)
 {
     // Execute the HLE version of the given exception vector
-    if (vector == 0x08) // SWI
+    switch (vector)
     {
-        // The PC was adjusted for an exception, so adjust it back
-        *registers[15] += 4;
+        case 0x08: // SWI
+        {
+            // The PC was adjusted for an exception, so adjust it back
+            *registers[15] += 4;
 
-        // Use the comment from the SWI opcode to lookup what function to execute
-        uint32_t address = *registers[15] - 4;
-        uint8_t comment = core->memory.read<uint8_t>(arm7, address);
-        return (this->*swiTable[comment & 0x1F])(registers);
-    }
-    else if (vector == 0x18) // IRQ
-    {
-        // Let the interpreter handle HLE interrupts
-        return core->interpreter[arm7].handleHleIrq();
-    }
-    else
-    {
-        LOG("Unimplemented ARM%d BIOS vector: 0x%02X\n", (arm7 ? 7 : 9), vector);
-        return 3;
+            // Use the comment from the SWI opcode to lookup what function to execute
+            uint32_t address = *registers[15] - (core->interpreter[arm7].isThumb() ? 4 : 6);
+            uint8_t comment = core->memory.read<uint8_t>(arm7, address);
+            return (this->*swiTable[std::min<uint8_t>(comment, 0x20)])(registers);
+        }
+
+        case 0x18: // IRQ
+            // Let the interpreter handle HLE interrupts
+            return core->interpreter[arm7].handleHleIrq();
+
+        default:
+            LOG("Unimplemented ARM%d BIOS vector: 0x%02X\n", (arm7 ? 7 : 9), vector);
+            return 3;
     }
 }
 
@@ -251,38 +252,44 @@ int Bios::swiSquareRoot(uint32_t **registers)
 
 int Bios::swiArcTan(uint32_t **registers)
 {
-    // Calculate the inverse of a fixed-point tangent
-    int32_t x = static_cast<int32_t>(*registers[0]);
-    int32_t x2 = (x * x) >> 14;
-    int32_t result = ((((((((0xA9 * x2) >> 14) + 0x390) * x2) >> 14) + 0x91C) * x2) >> 14) + 0xFB6;
-    result = ((((((result * x2) >> 14) + 0x16AA) * x2) >> 14) + 0x2081) * x;
-    result >>= 16;
-    *registers[0] = result;
+    int32_t x = *registers[0];
+    int32_t x2 = x * x;
+    int32_t result = 0;
+
+    result = ((0xA9 * x2) >> 14) + 0x390;
+    result = ((result * x2) >> 14) + 0x91C;
+    result = ((result * x2) >> 14) + 0xFB6;
+    result = ((result * x2) >> 14) + 0x16AA;
+    result = ((result * x2) >> 14) + 0x2081;
+    result = ((result * x2) >> 14) + 0x3651;
+    result = ((result * x2) >> 14) + 0xA2F9;
+    *registers[0] = (x * result) >> 16;
+
     return 3;
 }
 
 int Bios::swiArcTan2(uint32_t **registers)
 {
-    // Define parameters for calculating inverse tangent with correction processing
-    static const uint8_t offsets[] = { 0, 1, 1, 2, 2, 3, 3, 4 };
-    int32_t x = static_cast<int32_t>(*registers[0]);
-    int32_t y = static_cast<int32_t>(*registers[1]);
+    int32_t x = *registers[0];
+    int32_t y = *registers[1];
+    int32_t absX = abs(x);
+    int32_t absY = abs(y);
     uint8_t octant = 0;
 
-    // Determine which octant the angle resides in
     octant += (y < 0) << 2;
     octant += ((x ^ y) < 0) << 1;
-    octant += ((x ^ y ^ (abs(x) - abs(y))) < 0);
+    octant += ((x ^ y ^ (absX - absY)) < 0);
 
-    // Calculate a tangent within -pi/4 and pi/4, swapping parameters if necessary
-    bool swap = (abs(x) >= abs(y));
-    if (swap) SWAP(x, y);
+    if (absX >= absY)
+    {
+        SWAP(x, y);
+        octant += 2;
+    }
+
     *registers[0] = y ? ((x << 14) / y) : 0;
-
-    // Calculate the tangent's inverse and adjust based on octant
     swiArcTan(registers);
-    if (!swap) *registers[0] = -*registers[0];
-    *registers[0] += offsets[octant];
+    *registers[0] = (*registers[0] ^ (octant & 2)) - (octant >> 1);
+
     return 3;
 }
 
@@ -323,11 +330,11 @@ int Bios::swiCpuFastSet(uint32_t **registers)
     uint32_t size = (*registers[2] & 0xFFFFF) << 2;
 
     // Copy/fill memory from the source to the destination
-    for (uint32_t i = 0; i < size; ++i)
+    for (uint32_t i = 0; i < size; i += 4)
     {
-        uint32_t address = *registers[0] + (fixed ? 0 : i * 4);
+        uint32_t address = *registers[0] + (fixed ? 0 : i);
         uint32_t value = core->memory.read<uint32_t>(arm7, address);
-        core->memory.write<uint32_t>(arm7, *registers[1] + i * 4, value);
+        core->memory.write<uint32_t>(arm7, *registers[1] + i, value);
     }
     return 3;
 }
