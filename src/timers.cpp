@@ -75,7 +75,11 @@ void Timers::writeTmCntH(int timer, uint16_t mask, uint16_t value)
     }
 	
 	// Reload the counter if the enable bit changes from 0 to 1
-    timers[timer] = tmCntL[timer];
+	if (!(tmCntH[timer] & BIT(7)) && (value & BIT(7)))
+    {
+        timers[timer] = tmCntL[timer];
+        dirty = true;
+    }
 	
     // Write to one of the TMCNT_H registers
     mask &= 0x00C7;

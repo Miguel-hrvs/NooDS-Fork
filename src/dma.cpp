@@ -130,17 +130,16 @@ void Dma::transfer(int channel)
         core->interpreter[cpu].sendInterrupt(8 + channel);
 }
 
-void Dma::trigger(int mode, uint8_t channels) {
+void Dma::trigger(int mode, uint8_t channels)
+{
     // ARM7 DMAs don't use the lowest mode bit, so adjust accordingly
-    mode <<= (cpu == 1);
+    if (cpu == 1) mode <<= 1;
 
     // Schedule a transfer on channels that are enabled and set to the triggered mode
-    for (int i = 0; i < 4; i++) {
-        if (channels & BIT(i)) {
-            uint32_t dmaControl = dmaCnt[i];
-            if ((dmaControl & BIT(31)) && ((dmaControl >> 27) == mode))
-                core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + i), 1);
-        }
+    for (int i = 0; i < 4; i++)
+    {
+        if ((channels & BIT(i)) && (dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == mode)
+            core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + i), 1);
     }
 }
 
