@@ -252,44 +252,41 @@ int Bios::swiSquareRoot(uint32_t **registers)
 
 int Bios::swiArcTan(uint32_t **registers)
 {
-    int32_t x = *registers[0];
-    int32_t x2 = x * x;
-    int32_t result = 0;
-
-    result = ((0xA9 * x2) >> 14) + 0x390;
-    result = ((result * x2) >> 14) + 0x91C;
-    result = ((result * x2) >> 14) + 0xFB6;
-    result = ((result * x2) >> 14) + 0x16AA;
-    result = ((result * x2) >> 14) + 0x2081;
-    result = ((result * x2) >> 14) + 0x3651;
-    result = ((result * x2) >> 14) + 0xA2F9;
-    *registers[0] = (x * result) >> 16;
-
+    // Calculate the inverse of a fixed-point tangent
+    int32_t square = -(int32_t(*registers[0] * *registers[0]) >> 14);
+    int32_t result = ((square * 0xA9) >> 14) + 0x390;
+    result = ((result * square) >> 14) + 0x91C;
+    result = ((result * square) >> 14) + 0xFB6;
+    result = ((result * square) >> 14) + 0x16AA;
+    result = ((result * square) >> 14) + 0x2081;
+    result = ((result * square) >> 14) + 0x3651;
+    result = ((result * square) >> 14) + 0xA2F9;
+    *registers[0] = int32_t(*registers[0] * result) >> 16;
     return 3;
 }
 
 int Bios::swiArcTan2(uint32_t **registers)
 {
+    // Define parameters for calculating inverse tangent with correction processing
+    static const uint8_t offsets[] = { 0, 1, 1, 2, 2, 3, 3, 4 };
     int32_t x = *registers[0];
     int32_t y = *registers[1];
-    int32_t absX = abs(x);
-    int32_t absY = abs(y);
     uint8_t octant = 0;
 
+    // Determine which octant the angle resides in
     octant += (y < 0) << 2;
     octant += ((x ^ y) < 0) << 1;
-    octant += ((x ^ y ^ (absX - absY)) < 0);
+    octant += ((x ^ y ^ (abs(x) - abs(y))) < 0);
 
-    if (absX >= absY)
-    {
-        SWAP(x, y);
-        octant += 2;
-    }
-
+    // Calculate a tangent within -pi/4 and pi/4, swapping parameters if necessary
+    bool swap = (abs(x) >= abs(y));
+    if (swap) SWAP(x, y);
     *registers[0] = y ? ((x << 14) / y) : 0;
-    swiArcTan(registers);
-    *registers[0] = (*registers[0] ^ (octant & 2)) - (octant >> 1);
 
+    // Calculate the tangent's inverse and adjust based on octant
+    swiArcTan(registers);
+    if (!swap) *registers[0] = -*registers[0];
+    *registers[0] += offsets[octant] << 14;
     return 3;
 }
 
