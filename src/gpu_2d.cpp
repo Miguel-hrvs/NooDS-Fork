@@ -81,34 +81,37 @@ void Gpu2D::drawGbaScanline(int line)
     }
 
     // Draw the background layers depending on the BG mode
-    switch (dispCnt & 0x7)
-    {
-        case 0:
-            if (dispCnt & BIT(11)) drawText<1>(3, line);
-            if (dispCnt & BIT(10)) drawText<1>(2, line);
-            if (dispCnt & BIT(9))  drawText<1>(1, line);
-            if (dispCnt & BIT(8))  drawText<1>(0, line);
-            break;
-
-        case 1:
-            if (dispCnt & BIT(10)) drawAffine<1>(2, line);
-            if (dispCnt & BIT(9))    drawText<1>(1, line);
-            if (dispCnt & BIT(8))    drawText<1>(0, line);
-            break;
-
-        case 2:
-            if (dispCnt & BIT(11)) drawAffine<1>(3, line);
-            if (dispCnt & BIT(10)) drawAffine<1>(2, line);
-            break;
-
-        case 3: case 4: case 5:
-            if (dispCnt & BIT(10)) drawExtendedGba(2, line);
-            break;
-
-        default:
-            LOG("Unknown GBA BG mode: %d\n", dispCnt & 0x0007);
-            break;
-    }
+	if (dispCnt & BIT(11)) {
+		drawText<1>(3, line);
+	} else if (dispCnt & BIT(10)) {
+		if (dispCnt & BIT(9)) {
+			drawText<1>(2, line);
+			drawText<1>(1, line);
+		} else {
+			drawText<1>(2, line);
+		}
+	} else if (dispCnt & BIT(9)) {
+		drawText<1>(1, line);
+	} else if (dispCnt & BIT(8)) {
+		drawText<1>(0, line);
+	} else if (dispCnt & BIT(10)) {
+		drawAffine<1>(2, line);
+		if (dispCnt & BIT(9)) {
+			drawText<1>(1, line);
+		}
+		if (dispCnt & BIT(8)) {
+			drawText<1>(0, line);
+		}
+	} else if (dispCnt & BIT(11)) {
+		drawAffine<1>(3, line);
+		if (dispCnt & BIT(10)) {
+			drawAffine<1>(2, line);
+		}
+	} else if (dispCnt & BIT(10)) {
+		drawExtendedGba(2, line);
+	} else {
+		LOG("Unknown GBA BG mode: %d\n", dispCnt & 0x0007);
+	}
 
     uint8_t mode = (bldCnt >> 6) & 0x3;
 
@@ -660,19 +663,19 @@ void Gpu2D::drawExtended(int bg, int line)
         // Calculate the base data address
         uint32_t dataBase = bgVramAddr + ((bgCnt[bg] << 6) & 0x7C000);
 
-	    // Lookup table for bitmap sizes
-	    static const int bitmap_sizes[4][2] = {
-		    {128, 128},
-		    {256, 256},
-		    {512, 256},
-		    {512, 512}
-	    };
+	// Lookup table for bitmap sizes
+	static const int bitmap_sizes[4][2] = {
+		{128, 128},
+		{256, 256},
+		{512, 256},
+		{512, 512}
+	};
 
-	    // Get the bitmap size
-	    int sizeX, sizeY;
-	    int bgMode = (bgCnt[bg] >> 14) & 0x3;
-	    sizeX = bitmap_sizes[bgMode][0];
-	    sizeY = bitmap_sizes[bgMode][1];
+	// Get the bitmap size
+	int sizeX, sizeY;
+	int bgMode = (bgCnt[bg] >> 14) & 0x3;
+	sizeX = bitmap_sizes[bgMode][0];
+	sizeY = bitmap_sizes[bgMode][1];
 
         if (bgCnt[bg] & BIT(2)) // Direct color bitmap
         {
@@ -909,33 +912,33 @@ template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window)
 
         // Get the current object
         // Each object takes up 8 bytes in memory, but the last 2 bytes are reserved for rotscale
-        uint16_t object[3] =
-        {
-            (uint16_t)U8TO16(oam, i * 8 + 0),
-            (uint16_t)U8TO16(oam, i * 8 + 2),
-            (uint16_t)U8TO16(oam, i * 8 + 4)
-        };
-
-		// Lookup table for object dimensions
-		static const int object_dimensions[12][2] = {
-			{ 8,  8}, {16, 16}, {32, 32}, {64, 64},
-			{16,  8}, {32,  8}, {32, 16}, {64, 32},
-			{ 8, 16}, { 8, 32}, {16, 32}, {32, 64}
+        uint16_t object[3];
+		for (int j = 0; j < 3; j++)
+		{
+			object[j] = (uint16_t)U8TO16(oam, i * 8 + j * 2);
 		};
 
-		// Determine the dimensions of the object
-		int width, height;
-		int index = ((object[0] >> 12) & 0xC) | ((object[1] >> 14) & 0x3); // Shape, size
-		if (index < 12)
-		{
-			width = object_dimensions[index][0];
-			height = object_dimensions[index][1];
-		}
-		else
-		{
-			LOG("Unknown object dimensions: shape=%d, size=%d\n", (object[0] >> 14) & 0x3, (object[1] >> 14) & 0x3);
-			continue;
-		}
+		 // Determine the dimensions of the object
+        int width, height;
+        switch (((object[0] >> 12) & 0xC) | ((object[1] >> 14) & 0x3)) // Shape, size
+        {
+            case 0x0: width =  8; height =  8; break; // Square, 0
+            case 0x1: width = 16; height = 16; break; // Square, 1
+            case 0x2: width = 32; height = 32; break; // Square, 2
+            case 0x3: width = 64; height = 64; break; // Square, 3
+            case 0x4: width = 16; height =  8; break; // Horizontal, 0
+            case 0x5: width = 32; height =  8; break; // Horizontal, 1
+            case 0x6: width = 32; height = 16; break; // Horizontal, 2
+            case 0x7: width = 64; height = 32; break; // Horizontal, 3
+            case 0x8: width =  8; height = 16; break; // Vertical, 0
+            case 0x9: width =  8; height = 32; break; // Vertical, 1
+            case 0xA: width = 16; height = 32; break; // Vertical, 2
+            case 0xB: width = 32; height = 64; break; // Vertical, 3
+
+            default:
+                LOG("Unknown object dimensions: shape=%d, size=%d\n", (object[0] >> 14) & 0x3, (object[1] >> 14) & 0x3);
+                continue;
+        }
 
         // Double the object bounds for rotscale objects with the double size bit set
         int width2 = width, height2 = height;
