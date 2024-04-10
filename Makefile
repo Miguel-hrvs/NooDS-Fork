@@ -1,7 +1,7 @@
 NAME := noods
 BUILD := build
 SRCS := src src/common src/desktop
-ARGS := -Ofast -flto -std=c++11 -DUSE_GL_CANVAS #-DDEBUG
+ARGS := -O3 -flto -std=gnu++11 -fassociative-math -freciprocal-math -ffast-math -fno-signed-zeros -fno-gcse
 LIBS := $(shell pkg-config --libs portaudio-2.0)
 INCS := $(shell pkg-config --cflags portaudio-2.0)
 
@@ -94,16 +94,12 @@ android:
 switch:
 	$(MAKE) -f Makefile.switch
 
-wiiu:
-	$(MAKE) -f Makefile.wiiu
-
 vita:
 	$(MAKE) -f Makefile.vita
 
 clean:
 	if [ -d "build-android" ]; then ./gradlew clean; fi
 	if [ -d "build-switch" ]; then $(MAKE) -f Makefile.switch clean; fi
-	if [ -d "build-wiiu" ]; then $(MAKE) -f Makefile.wiiu clean; fi
 	if [ -d "build-vita" ]; then $(MAKE) -f Makefile.vita clean; fi
 	rm -rf $(BUILD)
 	rm -f $(NAME)
