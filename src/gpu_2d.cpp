@@ -81,36 +81,43 @@ void Gpu2D::drawGbaScanline(int line)
     }
 
     // Draw the background layers depending on the BG mode
-	if (dispCnt & BIT(11)) {
-		drawText<1>(3, line);
-	} else if (dispCnt & BIT(10)) {
-		if (dispCnt & BIT(9)) {
-			drawText<1>(2, line);
-			drawText<1>(1, line);
-		} else {
-			drawText<1>(2, line);
-		}
-	} else if (dispCnt & BIT(9)) {
-		drawText<1>(1, line);
-	} else if (dispCnt & BIT(8)) {
-		drawText<1>(0, line);
-	} else if (dispCnt & BIT(10)) {
-		drawAffine<1>(2, line);
-		if (dispCnt & BIT(9)) {
-			drawText<1>(1, line);
-		}
-		if (dispCnt & BIT(8)) {
-			drawText<1>(0, line);
-		}
-	} else if (dispCnt & BIT(11)) {
-		drawAffine<1>(3, line);
-		if (dispCnt & BIT(10)) {
-			drawAffine<1>(2, line);
-		}
-	} else if (dispCnt & BIT(10)) {
-		drawExtendedGba(2, line);
-	} else {
-		LOG("Unknown GBA BG mode: %d\n", dispCnt & 0x0007);
+	uint8_t bgMode = dispCnt & 0x7;
+	switch (bgMode)
+	{
+		case 0:
+			if (dispCnt & (BIT(11) | BIT(10) | BIT(9) | BIT(8)))
+			{
+				if (dispCnt & BIT(11)) drawText<1>(3, line);
+				if (dispCnt & BIT(10)) drawText<1>(2, line);
+				if (dispCnt & BIT(9))  drawText<1>(1, line);
+				if (dispCnt & BIT(8))  drawText<1>(0, line);
+			}
+			break;
+
+		case 1:
+			if (dispCnt & (BIT(10) | BIT(9) | BIT(8)))
+			{
+				if (dispCnt & BIT(10)) drawAffine<1>(2, line);
+				if (dispCnt & BIT(9))  drawText<1>(1, line);
+				if (dispCnt & BIT(8))  drawText<1>(0, line);
+			}
+			break;
+
+		case 2:
+			if (dispCnt & (BIT(11) | BIT(10)))
+			{
+				if (dispCnt & BIT(11)) drawAffine<1>(3, line);
+				if (dispCnt & BIT(10)) drawAffine<1>(2, line);
+			}
+			break;
+
+		case 3: case 4: case 5:
+			if (dispCnt & BIT(10)) drawExtendedGba(2, line);
+			break;
+
+		default:
+			LOG("Unknown GBA BG mode: %d\n", bgMode);
+			break;
 	}
 
     uint8_t mode = (bldCnt >> 6) & 0x3;
